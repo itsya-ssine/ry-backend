@@ -37,7 +37,7 @@ function handleActivities($method, $uri, $conn) {
     elseif ($method === "POST" && !$id) {
         $aid = uniqid("a");
         
-        $imageName = 'uploads/default-activity.jpg'; 
+        $imagePath = $_POST['image'] ?? 'https://res.cloudinary.com/dfnaghttm/image/upload/v1767385774/w7x1o1g2h8v4qjhamx5e.png'; 
 
         try {
             $title = $_POST['title'] ?? '';
@@ -47,7 +47,7 @@ function handleActivities($method, $uri, $conn) {
 
             $stmt = $conn->prepare(
                 "INSERT INTO activities (id, title, description, date, location, image)
-                 VALUES (?, ?, ?, ?, ?, ?)"
+                VALUES (?, ?, ?, ?, ?, ?)"
             );
             
             $stmt->bind_param(
@@ -57,20 +57,23 @@ function handleActivities($method, $uri, $conn) {
                 $description,
                 $date,
                 $location,
-                $imageName
+                $imagePath
             );
+            
             $stmt->execute();
             $stmt->close();
 
             echo json_encode([
+                "success" => true,
                 "message" => "Activity created",
                 "activityId" => $aid,
-                "imageName" => $imageName
+                "image" => $imagePath
             ]);
 
         } catch (Exception $e) {
             http_response_code(500);
             echo json_encode([
+                "success" => false,
                 "error" => "Failed to create activity",
                 "details" => $e->getMessage()
             ]);
@@ -90,8 +93,6 @@ function handleActivities($method, $uri, $conn) {
             return;
         }
 
-        $imagePath = $currentActivity['image'];
-
         $conn->begin_transaction();
 
         try {
@@ -99,6 +100,8 @@ function handleActivities($method, $uri, $conn) {
             $description = $_POST['description'] ?? '';
             $location = $_POST['location'] ?? 'ENSA KHOURIBGA';
             $date = $_POST['date'] ?? '';
+
+            $imagePath = $_POST['image'] ?? $currentActivity['image'];
 
             $stmt = $conn->prepare(
                 "UPDATE activities SET title=?, description=?, location=?, date=?, image=? WHERE id=?"
