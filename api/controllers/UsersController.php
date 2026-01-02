@@ -118,32 +118,9 @@ function handleUsers($method, $uri, $conn) {
     }
 
     if ($method === "POST" && $id === "avatar") {
-        $userId = $_POST['userId'] ?? null;
-        $file = $_FILES['avatar'] ?? null;
-
-        if (!$userId || !$file || $file['error'] !== UPLOAD_ERR_OK) {
-            echo json_encode(['success' => false, 'message' => 'No file uploaded']);
-            exit;
-        }
-
-        $uploadDir = 'uploads/pfps/';
-        $fileExtension = pathinfo($file['name'], PATHINFO_EXTENSION);
-        $fileName = "user_" . $userId . "_" . time() . "." . $fileExtension;
-        $targetPath = $uploadDir . $fileName;
-
-        if (move_uploaded_file($file['tmp_name'], $targetPath)) {
-            $stmt = $conn->prepare("UPDATE users SET avatar = ? WHERE id = ?");
-            $stmt->bind_param("si", $targetPath, $userId);
-            $stmt->execute();
-
-            echo json_encode([
-                'success' => true,
-                'avatar' => $targetPath
-            ]);
-        } else {
-            http_response_code(500);
-            echo json_encode(['success' => false, 'message' => 'Failed to save file']);
-        }
+        echo json_encode([
+            'success' => true
+        ]);
 
         return;
     }
