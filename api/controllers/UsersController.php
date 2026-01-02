@@ -80,28 +80,30 @@ function handleUsers($method, $uri, $conn) {
         return;
     }
 
-    if ($method === "POST" && $id === "bio") {
+    if ($method === "POST" && $id === "update") {
         $userId = $data['id'] ?? null;
         $newBio = $data['bio'] ?? null;
+        $newName = $data['name'] ?? null;
 
-        if (!$userId || $newBio === null) {
+        if (!$userId) {
             http_response_code(400);
-            echo json_encode(["error" => "bio not added"]);
+            echo json_encode(["error" => "not updated"]);
             exit;
         }
 
         try {
-            $stmt = $conn->prepare("UPDATE users SET bio = ? WHERE id = ?");
+            $stmt = $conn->prepare("UPDATE users SET bio = ?, name = ? WHERE id = ?");
             $stmt->bind_param(
-                "ss",
+                "sss",
                 $newBio,
+                $newName,
                 $userId,
             );
 
             if ($stmt->execute()) {
                 echo json_encode([
                     'success' => true, 
-                    'message' => 'Bio updated successfully'
+                    'message' => 'Updated successfully'
                 ]);
             } else {
                 throw new Exception($stmt->error);
