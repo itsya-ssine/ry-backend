@@ -118,9 +118,33 @@ function handleUsers($method, $uri, $conn) {
     }
 
     if ($method === "POST" && $id === "avatar") {
-        echo json_encode([
-            'success' => true
-        ]);
+        $userId = $_POST['userId'] ?? null;
+        $avatarUrl = $_POST['avatar'] ?? null; 
+
+        if (!$userId || !$avatarUrl) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'message' => 'User ID or Avatar URL missing']);
+            return;
+        }
+
+        try {
+            $stmt = $conn->prepare("UPDATE users SET avatar = ? WHERE id = ?");
+            $stmt->bind_param("ss", $avatarUrl, $userId);
+            
+            if ($stmt->execute()) {
+                echo json_encode([
+                    'success' => true,
+                    'avatar' => $avatarUrl
+                ]);
+            } else {
+                throw new Exception("Database update failed");
+            }
+            $stmt->close();
+
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
 
         return;
     }
