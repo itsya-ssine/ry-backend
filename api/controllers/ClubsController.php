@@ -49,21 +49,6 @@ function handleClubs($method, $uri, $conn) {
         
         $imagePath = 'uploads/default-club.jpg'; 
 
-        if (isset($_FILES['image']) && $_FILES['image']['error'] === 0) {
-            $uploadDir = 'uploads/';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $fileExtension = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
-            $fileName = uniqid("img_") . "." . $fileExtension;
-            $targetFile = $uploadDir . $fileName;
-
-            if (move_uploaded_file($_FILES['image']['tmp_name'], $targetFile)) {
-                $imagePath = $targetFile;
-            }
-        }
-
         $conn->begin_transaction();
 
         try {
@@ -171,17 +156,6 @@ function handleClubs($method, $uri, $conn) {
             $name = $_POST['name'] ?? '';
             $description = $_POST['description'] ?? '';
             $category = $_POST['category'] ?? 'General';
-
-            if (isset($_FILES['image']) && $_FILES['image']['error'] === 0) {
-                $uploadDir = 'uploads/';
-                $fileExtension = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
-                $fileName = uniqid("img_") . "." . $fileExtension;
-                $targetFile = $uploadDir . $fileName;
-
-                if (move_uploaded_file($_FILES['image']['tmp_name'], $targetFile)) {
-                    $imagePath = $targetFile;
-                }
-            }
 
             $stmt = $conn->prepare(
                 "UPDATE clubs SET name=?, description=?, category=?, image=? WHERE id=?"
