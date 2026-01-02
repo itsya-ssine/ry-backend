@@ -82,40 +82,35 @@ function handleUsers($method, $uri, $conn) {
 
     if ($method === "POST" && $id === "update") {
         $userId = $data['id'] ?? null;
-        $newBio = $data['bio'] ?? null;
-        $newName = $data['name'] ?? null;
+        
+        $fetch = $conn->prepare("SELECT name, bio FROM users WHERE id = ?");
+        $fetch->bind_param("s", $userId);
+        $fetch->execute();
+        $current = $fetch->get_result()->fetch_assoc();
 
-        if (!$userId) {
-            http_response_code(400);
-            echo json_encode(["error" => "not updated"]);
+        if (!$current) {
+            http_response_code(404);
+            echo json_encode(["error" => "User not found"]);
             exit;
         }
 
+        $newName = $data['name'] ?? $current['name'];
+        $newBio  = $data['bio'] ?? $current['bio'];
+
         try {
             $stmt = $conn->prepare("UPDATE users SET bio = ?, name = ? WHERE id = ?");
-            $stmt->bind_param(
-                "sss",
-                $newBio,
-                $newName,
-                $userId,
-            );
+            $stmt->bind_param("sss", $newBio, $newName, $userId);
 
             if ($stmt->execute()) {
-                echo json_encode([
-                    'success' => true, 
-                    'message' => 'Updated successfully'
-                ]);
+                echo json_encode(['success' => true, 'message' => 'Updated successfully']);
             } else {
                 throw new Exception($stmt->error);
             }
-
             $stmt->close();
-
         } catch (Exception $e) {
             http_response_code(500);
-            echo json_encode(["error" => "error"]);
+            echo json_encode(["error" => "Database error"]);
         }
-
         return;
     }
 
