@@ -39,18 +39,6 @@ function handleActivities($method, $uri, $conn) {
         
         $imageName = 'uploads/default-activity.jpg'; 
 
-        if (isset($_FILES['image']) && $_FILES['image']['error'] === 0) {
-            $uploadDir = 'uploads/';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $fileExtension = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
-            $imageName = $uploadDir . uniqid("act_") . "." . $fileExtension;
-
-            move_uploaded_file($_FILES['image']['tmp_name'], $imageName);
-        }
-
         try {
             $title = $_POST['title'] ?? '';
             $description = $_POST['description'] ?? '';
@@ -111,19 +99,6 @@ function handleActivities($method, $uri, $conn) {
             $description = $_POST['description'] ?? '';
             $location = $_POST['location'] ?? 'ENSA KHOURIBGA';
             $date = $_POST['date'] ?? '';
-
-            if (isset($_FILES['image']) && $_FILES['image']['error'] === 0) {
-                $uploadDir = 'uploads/';
-                if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-
-                $fileExtension = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
-                $fileName = uniqid("act_") . "." . $fileExtension;
-                $targetFile = $uploadDir . $fileName;
-
-                if (move_uploaded_file($_FILES['image']['tmp_name'], $targetFile)) {
-                    $imagePath = $targetFile;
-                }
-            }
 
             $stmt = $conn->prepare(
                 "UPDATE activities SET title=?, description=?, location=?, date=?, image=? WHERE id=?"
