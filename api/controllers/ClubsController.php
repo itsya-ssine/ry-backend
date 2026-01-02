@@ -47,10 +47,9 @@ function handleClubs($method, $uri, $conn) {
     elseif ($method === "POST" && !$id) {
         $cid = uniqid("c");
         
-        $imagePath = 'uploads/default-club.jpg'; 
+        $imagePath = $_POST['image'] ?? 'https://res.cloudinary.com/dfnaghttm/image/upload/v1767385651/eor1qixyfbonciki20qr.jpg'; 
 
         $conn->begin_transaction();
-
         try {
             $name = $_POST['name'] ?? '';
             $description = $_POST['description'] ?? '';
@@ -62,15 +61,7 @@ function handleClubs($method, $uri, $conn) {
                 VALUES (?, ?, ?, ?, ?, ?)"
             );
             
-            $stmt->bind_param(
-                "ssssss",
-                $cid,
-                $name,
-                $description,
-                $managerId,
-                $imagePath, 
-                $category
-            );
+            $stmt->bind_param("ssssss", $cid, $name, $description, $managerId, $imagePath, $category);
             $stmt->execute();
             $stmt->close();
 
@@ -80,20 +71,15 @@ function handleClubs($method, $uri, $conn) {
             $updateStmt->close();
 
             $conn->commit();
-
             echo json_encode([
                 "message" => "Club created and manager role updated",
                 "clubId" => $cid,
                 "imagePath" => $imagePath
             ]);
-
         } catch (Exception $e) {
             $conn->rollback();
             http_response_code(500);
-            echo json_encode([
-                "error" => "Failed to create club",
-                "details" => $e->getMessage()
-            ]);
+            echo json_encode(["error" => "Failed to create club", "details" => $e->getMessage()]);
         }
     }
 
@@ -145,13 +131,12 @@ function handleClubs($method, $uri, $conn) {
         if (!$currentClub) {
             http_response_code(404);
             echo json_encode(["error" => "Club not found"]);
-            exit;
+            return;
         }
 
-        $imagePath = $currentClub['image'];
+        $imagePath = $_POST['image'] ?? $currentClub['image'];
 
         $conn->begin_transaction();
-
         try {
             $name = $_POST['name'] ?? '';
             $description = $_POST['description'] ?? '';
@@ -161,14 +146,7 @@ function handleClubs($method, $uri, $conn) {
                 "UPDATE clubs SET name=?, description=?, category=?, image=? WHERE id=?"
             );
             
-            $stmt->bind_param(
-                "sssss",
-                $name,
-                $description,
-                $category,
-                $imagePath,
-                $id
-            );
+            $stmt->bind_param("sssss", $name, $description, $category, $imagePath, $id);
 
             if ($stmt->execute()) {
                 $conn->commit();
@@ -181,14 +159,10 @@ function handleClubs($method, $uri, $conn) {
                 throw new Exception("Execute failed");
             }
             $stmt->close();
-
         } catch (Exception $e) {
             $conn->rollback();
             http_response_code(500);
-            echo json_encode([
-                "error" => "Failed to update club",
-                "details" => $e->getMessage()
-            ]);
+            echo json_encode(["error" => "Failed to update club", "details" => $e->getMessage()]);
         }
     }
 
