@@ -28,7 +28,8 @@ function handleRegistrations($method, $uri, $conn) {
                 "student" => [
                     "id" => $row['userId'],
                     "name" => $row['name'],
-                    "email" => $row['email']
+                    "email" => $row['email'],
+                    "avatar" => $row['avatar']
                 ]
             ];
         }
