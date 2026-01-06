@@ -7,7 +7,7 @@ function handleRegistrations($method, $uri, $conn) {
     header("Content-Type: application/json");
 
     if ($method === "GET" && $id === 'club' && $subId) {
-        $sql = "SELECT r.joinedAt, r.status, r.clubId, u.id as userId, u.name, u.email 
+        $sql = "SELECT r.joinedAt, r.status, r.clubId, u.id as userId, u.name, u.email, u.avatar
                 FROM registrations r 
                 JOIN users u ON r.studentId = u.id 
                 WHERE r.clubId = ?";
