@@ -6,10 +6,10 @@ function handleBadges($method, $uri, $conn) {
 
     switch ($method) {
         case "POST":
-            if ($action === "get-by-user") {
-                getBadgesByUser($conn, $input);
-            } elseif ($action === "add") {
+            if ($action === "add") {
                 addBadge($conn, $input);
+            } elseif ($action === "id") { 
+                getBadgesByUser($conn, $input);
             } else {
                 sendResponse(["error" => "Action not found"], 404);
             }

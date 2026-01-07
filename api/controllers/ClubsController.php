@@ -21,17 +21,11 @@ function handleClubs($method, $uri, $conn) {
             break;
 
         case "PUT":
-            if ($id && $subId) {
-                changeClubManager($conn, $id, $subId);
-            }
+            if ($id && $subId) changeClubManager($conn, $id, $subId);
             break;
 
         case "DELETE":
-            if ($id) {
-                deleteClub($conn, $id);
-            } else {
-                sendResponse(["error" => "ID required"], 400);
-            }
+            deleteClub($conn, $id);
             break;
 
         default:

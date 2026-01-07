@@ -1,22 +1,19 @@
 <?php
 
 function handleUsers($method, $uri, $conn) {
-    $id = $uri[1] ?? null;
+    $action = $uri[1] ?? null;
     $input = getRequestInput();
 
     switch ($method) {
         case "GET":
-            $id ? getUserById($conn, $id) : getAllUsers($conn);
+            $action ? getUserById($conn, $action) : getAllUsers($conn);
             break;
 
         case "POST":
-            if ($id === "login") loginUser($conn, $input);
-            elseif ($id === "register") registerUser($conn, $input);
-            break;
-
-        case "PUT":
-            if ($id === "update") updateProfile($conn, $input);
-            elseif ($id === "avatar") updateAvatar($conn, $input);
+            if ($action === "login") loginUser($conn, $input);
+            elseif ($action === "register") registerUser($conn, $input);
+            elseif ($action === "update") updateProfile($conn, $input);
+            elseif ($action === "avatar") updateAvatar($conn, $input);
             break;
 
         default:

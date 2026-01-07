@@ -6,13 +6,9 @@ function handleActivities($method, $uri, $conn) {
 
     switch ($method) {
         case "GET":
-            if ($id === "recent") {
-                getRecentActivities($conn);
-            } elseif ($id) {
-                getActivityById($conn, $id);
-            } else {
-                getAllActivities($conn);
-            }
+            if ($id === "recent") getRecentActivities($conn);
+            elseif ($id) getActivityById($conn, $id);
+            else getAllActivities($conn);
             break;
 
         case "POST":
@@ -22,9 +18,6 @@ function handleActivities($method, $uri, $conn) {
         case "DELETE":
             deleteActivity($conn, $id);
             break;
-
-        default:
-            sendResponse(["error" => "Method not allowed"], 405);
     }
 }
 
