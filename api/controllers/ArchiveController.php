@@ -2,21 +2,22 @@
 
 function handleArchive($method, $uri, $conn) {
     $resourceType = $uri[1] ?? null;
-    $id = $uri[2] ?? null;
 
     switch ($method) {
         case "GET":
             if ($resourceType === "activities") {
-                return getArchivedActivities($conn);
+                getArchivedActivities($conn);
+            } else {
+                sendResponse(["error" => "Archive category not found"], 404);
             }
-            sendArchiveResponse(["error" => "Archive category not found"], 404);
             break;
 
         default:
-            sendArchiveResponse(["error" => "Method not allowed"], 405);
+            sendResponse(["error" => "Method not allowed"], 405);
             break;
     }
 }
+
 
 function getArchivedActivities($conn) {
     try {
@@ -27,19 +28,13 @@ function getArchivedActivities($conn) {
             throw new Exception($conn->error);
         }
 
-        sendArchiveResponse($res->fetch_all(MYSQLI_ASSOC));
+        sendResponse($res->fetch_all(MYSQLI_ASSOC));
+        
     } catch (Exception $e) {
-        sendArchiveResponse([
+        sendResponse([
             "success" => false, 
             "error" => "Failed to fetch archive", 
             "details" => $e->getMessage()
         ], 500);
     }
-}
-
-
-function sendArchiveResponse($data, $code = 200) {
-    http_response_code($code);
-    echo json_encode($data);
-    exit;
 }

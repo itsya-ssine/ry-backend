@@ -2,20 +2,26 @@
 
 function handleActivities($method, $uri, $conn) {
     $id = $uri[1] ?? null;
-    
-    $input = json_decode(file_get_contents("php://input"), true) ?? $_POST;
+    $input = getRequestInput();
 
     switch ($method) {
         case "GET":
-            if ($id === "recent") return getRecentActivities($conn);
-            if ($id) return getActivityById($conn, $id);
-            return getAllActivities($conn);
+            if ($id === "recent") {
+                getRecentActivities($conn);
+            } elseif ($id) {
+                getActivityById($conn, $id);
+            } else {
+                getAllActivities($conn);
+            }
+            break;
 
         case "POST":
-            return $id ? updateActivity($conn, $id, $input) : createActivity($conn, $input);
+            $id ? updateActivity($conn, $id, $input) : createActivity($conn, $input);
+            break;
 
         case "DELETE":
-            return deleteActivity($conn, $id);
+            deleteActivity($conn, $id);
+            break;
 
         default:
             sendResponse(["error" => "Method not allowed"], 405);
@@ -40,7 +46,7 @@ function getActivityById($conn, $id) {
     $stmt->execute();
     $activity = $stmt->get_result()->fetch_assoc();
     
-    $activity ? sendResponse($activity) : sendResponse(["error" => "Not found"], 404);
+    $activity ? sendResponse($activity) : sendResponse(["error" => "Activity not found"], 404);
 }
 
 function createActivity($conn, $input) {
@@ -49,7 +55,8 @@ function createActivity($conn, $input) {
 
     try {
         $stmt = $conn->prepare(
-            "INSERT INTO activities (id, title, description, date, location, image) VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO activities (id, title, description, date, location, image) 
+             VALUES (?, ?, ?, ?, ?, ?)"
         );
         $stmt->bind_param("ssssss", $aid, $data['title'], $data['desc'], $data['date'], $data['loc'], $data['img']);
         $stmt->execute();
@@ -66,7 +73,9 @@ function updateActivity($conn, $id, $input) {
     $stmt->execute();
     $current = $stmt->get_result()->fetch_assoc();
 
-    if (!$current) return sendResponse(["error" => "Activity not found"], 404);
+    if (!$current) {
+        sendResponse(["error" => "Activity not found"], 404);
+    }
 
     $data = prepareActivityData($input, $current['image']);
 
@@ -77,20 +86,24 @@ function updateActivity($conn, $id, $input) {
         $stmt->bind_param("ssssss", $data['title'], $data['desc'], $data['loc'], $data['date'], $data['img'], $id);
         $stmt->execute();
 
-        sendResponse(["message" => "Activity updated", "id" => $id]);
+        sendResponse(["message" => "Activity updated successfully", "id" => $id]);
     } catch (Exception $e) {
         sendResponse(["error" => "Update failed", "details" => $e->getMessage()], 500);
     }
 }
 
 function deleteActivity($conn, $id) {
-    if (!$id) return sendResponse(["error" => "ID required"], 400);
+    if (!$id) {
+        sendResponse(["error" => "ID is required for deletion"], 400);
+    }
     
     $stmt = $conn->prepare("DELETE FROM activities WHERE id = ?");
     $stmt->bind_param("s", $id);
     $stmt->execute();
-    sendResponse(["message" => "Activity deleted"]);
+    
+    sendResponse(["message" => "Activity deleted successfully"]);
 }
+
 
 function prepareActivityData($input, $defaultImg = 'https://res.cloudinary.com/.../default.png') {
     return [
@@ -100,10 +113,4 @@ function prepareActivityData($input, $defaultImg = 'https://res.cloudinary.com/.
         'loc'   => $input['location'] ?? 'ENSA KHOURIBGA',
         'img'   => $input['image'] ?? $defaultImg
     ];
-}
-
-function sendResponse($data, $code = 200) {
-    http_response_code($code);
-    echo json_encode($data);
-    exit;
 }

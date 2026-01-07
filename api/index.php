@@ -1,4 +1,7 @@
 <?php
+
+require_once "helpers/ResponseHelper.php";
+
 declare(strict_types=1);
 
 error_reporting(E_ALL);
@@ -53,10 +56,4 @@ if (isset($routes[$resource])) {
     $handler($method, $uriParams, $conn);
 } else {
     sendResponse(["error" => "Resource '$resource' not found"], 404);
-}
-
-function sendResponse(array $data, int $code = 200): void {
-    http_response_code($code);
-    echo json_encode($data);
-    exit;
 }
