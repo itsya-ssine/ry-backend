@@ -34,22 +34,31 @@ function handleRegistrations($method, $uri, $conn) {
 }
 
 function getAllRegistrations($conn) {
-    $sql = "SELECT r.*, u.name, u.email, u.avatar FROM registrations r 
+    $sql = "SELECT r.id as reg_id, r.joinedAt, r.status, r.clubId, r.studentId, u.name, u.email, u.avatar 
+            FROM registrations r 
             JOIN users u ON r.studentId = u.id";
     $res = $conn->query($sql);
     sendResponse(formatRegistrationRows($res));
 }
 
 function getRegistrationsByClub($conn, $clubId) {
-    $sql = "SELECT r.*, u.name, u.email, u.avatar FROM registrations r 
+    $sql = "SELECT r.id as reg_id, r.joinedAt, r.status, r.clubId, r.studentId, u.name, u.email, u.avatar 
+            FROM registrations r 
             JOIN users u ON r.studentId = u.id WHERE r.clubId = ?";
-    executeFilteredQuery($conn, $sql, $clubId);
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("s", $clubId);
+    $stmt->execute();
+    sendResponse(formatRegistrationRows($stmt->get_result()));
 }
 
 function getRegistrationsByStudent($conn, $studentId) {
-    $sql = "SELECT r.*, u.name, u.email, u.avatar FROM registrations r 
+    $sql = "SELECT r.id as reg_id, r.joinedAt, r.status, r.clubId, r.studentId, u.name, u.email, u.avatar 
+            FROM registrations r 
             JOIN users u ON r.studentId = u.id WHERE r.studentId = ?";
-    executeFilteredQuery($conn, $sql, $studentId);
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("s", $studentId);
+    $stmt->execute();
+    sendResponse(formatRegistrationRows($stmt->get_result()));
 }
 
 function createRegistration($conn, $input) {
@@ -58,8 +67,7 @@ function createRegistration($conn, $input) {
     $status = $input['status'] ?? 'pending';
     $date = date("Y-m-d");
 
-    if (!$sId || !$cId)
-        sendResponse(["error" => "Missing IDs"], 400);
+    if (!$sId || !$cId) sendResponse(["error" => "Missing IDs"], 400);
 
     $registrationId = bin2hex(random_bytes(8)); 
 
@@ -67,13 +75,9 @@ function createRegistration($conn, $input) {
     $stmt->bind_param("sssss", $registrationId, $sId, $cId, $status, $date);
 
     if ($stmt->execute()) {
-        sendResponse([
-            "success" => true, 
-            "id" => $registrationId, 
-            "joinedAt" => $date
-        ], 201);
+        sendResponse(["success" => true, "id" => $registrationId, "joinedAt" => $date], 201);
     } else {
-        sendResponse(["error" => "Registration failed", "details" => $conn->error], 500);
+        sendResponse(["error" => "Registration failed"], 500);
     }
 }
 
@@ -102,25 +106,20 @@ function removeRegistration($conn, $input) {
     $stmt->execute() ? sendResponse(["message" => "Removed"]) : sendResponse(["error" => "Delete failed"], 500);
 }
 
-function executeFilteredQuery($conn, $sql, $id) {
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("s", $id);
-    $stmt->execute();
-    sendResponse(formatRegistrationRows($stmt->get_result()));
-}
-
 function formatRegistrationRows($result) {
     $data = [];
+    if (!$result) return $data;
+    
     while ($row = $result->fetch_assoc()) {
         $data[] = [
-            "id" => $row['id'],
-            "joinedAt" => $row['joinedAt'],
-            "status" => $row['status'],
-            "clubId" => $row['clubId'],
+            "id" => $row['reg_id'] ?? null, 
+            "joinedAt" => $row['joinedAt'] ?? null,
+            "status" => $row['status'] ?? 'pending',
+            "clubId" => $row['clubId'] ?? null,
             "student" => [
-                "id" => $row['studentId'],
-                "name" => $row['name'],
-                "email" => $row['email'],
+                "id" => $row['studentId'] ?? null,
+                "name" => $row['name'] ?? 'Unknown',
+                "email" => $row['email'] ?? '',
                 "avatar" => $row['avatar'] ?? null
             ]
         ];
