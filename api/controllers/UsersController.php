@@ -99,6 +99,6 @@ function getUserById($conn, $id) {
 }
 
 function getAllUsers($conn) {
-    $res = $conn->query("SELECT id, name, email, role FROM users WHERE role != 'admin");
+    $res = $conn->query("SELECT id, name, email, role FROM users WHERE role != 'admin'");
     sendResponse($res->fetch_all(MYSQLI_ASSOC));
 }
