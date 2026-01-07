@@ -11,19 +11,11 @@
         { "key": "Access-Control-Allow-Credentials", "value": "true" },
         { "key": "Access-Control-Allow-Origin", "value": "https://ry-frontend.vercel.app" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,DELETE,PATCH,POST,PUT,OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version" }
+        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization" }
       ]
     }
   ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "methods": ["OPTIONS"],
-      "dest": "/api/index.php"
-    },
-    {
-      "handle": "filesystem"
-    },
     {
       "src": "/api/(.*)",
       "dest": "/api/index.php"
