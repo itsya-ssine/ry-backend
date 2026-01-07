@@ -1,18 +1,45 @@
 <?php
-function handleArchive($method, $uri, $conn) {
-    $id = $uri[1] ?? null;
-    $subId = $uri[2] ?? null;
 
-    if ($method === "GET" && $id === "activities") {
-        $stmt = $conn->prepare("SELECT * FROM activities_archive ORDER BY date");
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        $activities = [];
-        while ($row = $result->fetch_assoc()) {
-            $activities[] = $row;
-        }
-        
-        echo json_encode($activities);
+function handleArchive($method, $uri, $conn) {
+    $resourceType = $uri[1] ?? null;
+    $id = $uri[2] ?? null;
+
+    switch ($method) {
+        case "GET":
+            if ($resourceType === "activities") {
+                return getArchivedActivities($conn);
+            }
+            sendArchiveResponse(["error" => "Archive category not found"], 404);
+            break;
+
+        default:
+            sendArchiveResponse(["error" => "Method not allowed"], 405);
+            break;
     }
+}
+
+function getArchivedActivities($conn) {
+    try {
+        $sql = "SELECT * FROM activities_archive ORDER BY date DESC";
+        $res = $conn->query($sql);
+        
+        if (!$res) {
+            throw new Exception($conn->error);
+        }
+
+        sendArchiveResponse($res->fetch_all(MYSQLI_ASSOC));
+    } catch (Exception $e) {
+        sendArchiveResponse([
+            "success" => false, 
+            "error" => "Failed to fetch archive", 
+            "details" => $e->getMessage()
+        ], 500);
+    }
+}
+
+
+function sendArchiveResponse($data, $code = 200) {
+    http_response_code($code);
+    echo json_encode($data);
+    exit;
 }

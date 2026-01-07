@@ -1,209 +1,159 @@
 <?php
+
 function handleClubs($method, $uri, $conn) {
     $id = $uri[1] ?? null;
     $subId = $uri[2] ?? null;
+    $input = json_decode(file_get_contents("php://input"), true) ?? $_POST;
 
-    $data = json_decode(file_get_contents("php://input"), true);
+    switch ($method) {
+        case "GET":
+            if ($id === "manager" && $subId) return getClubByManager($conn, $subId);
+            if ($id) return getClubById($conn, $id);
+            return getAllClubs($conn);
 
-    // GET /clubs
-    if ($method === "GET" && !$id) {
-        $res = $conn->query("SELECT * FROM clubs");
-        echo json_encode($res->fetch_all(MYSQLI_ASSOC));
+        case "POST":
+            return $id ? updateClub($conn, $id, $input) : createClub($conn, $input);
+
+        case "PUT":
+            if ($id && $subId) return changeClubManager($conn, $id, $subId);
+            break;
+
+        case "DELETE":
+            return $id ? deleteClub($conn, $id) : sendClubResponse(["error" => "ID required"], 400);
+
+        default:
+            sendClubResponse(["error" => "Method not allowed"], 405);
     }
+}
 
-    // GET /clubs/manager/{userId}
-    elseif ($method === "GET" && $id === "manager" && $subId) {
-        $managerId = $subId;
 
-        $stmt = $conn->prepare(
-            "SELECT id
-            FROM clubs
-            WHERE managerId = ?
-            LIMIT 1"
-        );
-        $stmt->bind_param("s", $managerId);
+function getAllClubs($conn) {
+    $res = $conn->query("SELECT * FROM clubs");
+    sendClubResponse($res->fetch_all(MYSQLI_ASSOC));
+}
+
+function getClubByManager($conn, $managerId) {
+    $stmt = $conn->prepare("SELECT id FROM clubs WHERE managerId = ? LIMIT 1");
+    $stmt->bind_param("s", $managerId);
+    $stmt->execute();
+    $club = $stmt->get_result()->fetch_assoc();
+
+    $club ? sendClubResponse($club) : sendClubResponse(["error" => "No club managed"], 404);
+}
+
+function getClubById($conn, $id) {
+    $stmt = $conn->prepare("SELECT * FROM clubs WHERE id = ?");
+    $stmt->bind_param("s", $id);
+    $stmt->execute();
+    $club = $stmt->get_result()->fetch_assoc();
+
+    $club ? sendClubResponse($club) : sendClubResponse(["error" => "Club not found"], 404);
+}
+
+function createClub($conn, $input) {
+    $cid = uniqid("c");
+    $managerId = $input['managerId'] ?? '';
+    $img = $input['image'] ?? 'https://res.cloudinary.com/.../default.jpg';
+
+    $conn->begin_transaction();
+    try {
+        $stmt = $conn->prepare("INSERT INTO clubs (id, name, description, managerId, image, category) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssss", $cid, $input['name'], $input['description'], $managerId, $img, $input['category']);
         $stmt->execute();
 
-        $result = $stmt->get_result();
-        $club = $result->fetch_assoc();
+        updateUserRole($conn, $managerId, 'club_manager');
 
-        if ($club) {
-            echo json_encode($club);
-        } else {
-            http_response_code(404);
-            echo json_encode(["error" => "User does not manage any club"]);
-        }
+        $conn->commit();
+        sendClubResponse(["message" => "Club created", "clubId" => $cid], 201);
+    } catch (Exception $e) {
+        $conn->rollback();
+        sendClubResponse(["error" => "Failed to create club", "details" => $e->getMessage()], 500);
     }
+}
 
-    // GET /clubs/{id}
-    elseif ($method === "GET" && $id) {
-        $stmt = $conn->prepare("SELECT * FROM clubs WHERE id=?");
+function updateClub($conn, $id, $input) {
+    $stmt = $conn->prepare("SELECT image FROM clubs WHERE id = ?");
+    $stmt->bind_param("s", $id);
+    $stmt->execute();
+    $current = $stmt->get_result()->fetch_assoc();
+
+    if (!$current) return sendClubResponse(["error" => "Club not found"], 404);
+
+    $img = $input['image'] ?? $current['image'];
+
+    try {
+        $stmt = $conn->prepare("UPDATE clubs SET name=?, description=?, category=?, image=? WHERE id=?");
+        $stmt->bind_param("sssss", $input['name'], $input['description'], $input['category'], $img, $id);
+        $stmt->execute();
+        sendClubResponse(["message" => "Club updated successfully"]);
+    } catch (Exception $e) {
+        sendClubResponse(["error" => "Update failed"], 500);
+    }
+}
+
+function changeClubManager($conn, $clubId, $newManagerId) {
+    $conn->begin_transaction();
+    try {
+        $stmt = $conn->prepare("SELECT managerId FROM clubs WHERE id = ?");
+        $stmt->bind_param("s", $clubId);
+        $stmt->execute();
+        $oldManagerId = $stmt->get_result()->fetch_assoc()['managerId'] ?? null;
+
+        if (!$oldManagerId) throw new Exception("Club not found");
+
+        updateUserRole($conn, $oldManagerId, 'student');
+        $upd = $conn->prepare("UPDATE clubs SET managerId = ? WHERE id = ?");
+        $upd->bind_param("ss", $newManagerId, $clubId);
+        $upd->execute();
+        updateUserRole($conn, $newManagerId, 'club_manager');
+
+        $conn->commit();
+        sendClubResponse(["message" => "Manager transfer complete"]);
+    } catch (Exception $e) {
+        $conn->rollback();
+        sendClubResponse(["error" => $e->getMessage()], 500);
+    }
+}
+
+function deleteClub($conn, $id) {
+    $conn->begin_transaction();
+    try {
+        $stmt = $conn->prepare("SELECT managerId FROM clubs WHERE id = ?");
         $stmt->bind_param("s", $id);
         $stmt->execute();
-        echo json_encode($stmt->get_result()->fetch_assoc());
-    }
+        $managerId = $stmt->get_result()->fetch_assoc()['managerId'] ?? null;
 
-    // POST /clubs
-    elseif ($method === "POST" && !$id) {
-        $cid = uniqid("c");
+        if (!$managerId) return sendClubResponse(["error" => "Club not found"], 404);
+
+        $del = $conn->prepare("DELETE FROM clubs WHERE id = ?");
+        $del->bind_param("s", $id);
+        $del->execute();
+
+        $check = $conn->prepare("SELECT id FROM clubs WHERE managerId = ?");
+        $check->bind_param("s", $managerId);
+        $check->execute();
         
-        $imagePath = $_POST['image'] ?? 'https://res.cloudinary.com/dfnaghttm/image/upload/v1767385651/eor1qixyfbonciki20qr.jpg'; 
-
-        $conn->begin_transaction();
-        try {
-            $name = $_POST['name'] ?? '';
-            $description = $_POST['description'] ?? '';
-            $managerId = $_POST['managerId'] ?? '';
-            $category = $_POST['category'] ?? 'General';
-
-            $stmt = $conn->prepare(
-                "INSERT INTO clubs (id, name, description, managerId, image, category)
-                VALUES (?, ?, ?, ?, ?, ?)"
-            );
-            
-            $stmt->bind_param("ssssss", $cid, $name, $description, $managerId, $imagePath, $category);
-            $stmt->execute();
-            $stmt->close();
-
-            $updateStmt = $conn->prepare("UPDATE users SET role = 'club_manager' WHERE id = ?");
-            $updateStmt->bind_param("s", $managerId);
-            $updateStmt->execute();
-            $updateStmt->close();
-
-            $conn->commit();
-            echo json_encode([
-                "message" => "Club created and manager role updated",
-                "clubId" => $cid,
-                "imagePath" => $imagePath
-            ]);
-        } catch (Exception $e) {
-            $conn->rollback();
-            http_response_code(500);
-            echo json_encode(["error" => "Failed to create club", "details" => $e->getMessage()]);
+        if ($check->get_result()->num_rows === 0) {
+            updateUserRole($conn, $managerId, 'student');
         }
+
+        $conn->commit();
+        sendClubResponse(["message" => "Club deleted"]);
+    } catch (Exception $e) {
+        $conn->rollback();
+        sendClubResponse(["error" => "Delete failed"], 500);
     }
+}
 
-    // PUT /clubs/{id}/{managerId}
-    elseif ($method === "PUT" && $id && $subId) {
-        $conn->begin_transaction();
 
-        try {
-            $fetchStmt = $conn->prepare("SELECT managerId FROM clubs WHERE id = ?");
-            $fetchStmt->bind_param("s", $id);
-            $fetchStmt->execute();
-            $result = $fetchStmt->get_result();
-            $currentClub = $result->fetch_assoc();
+function updateUserRole($conn, $userId, $role) {
+    $stmt = $conn->prepare("UPDATE users SET role = ? WHERE id = ?");
+    $stmt->bind_param("ss", $role, $userId);
+    $stmt->execute();
+}
 
-            if (!$currentClub || !$currentClub['managerId']) {
-                throw new Exception("Club not found.");
-            }
-
-            $roleStmt = $conn->prepare("UPDATE users SET role = 'student' WHERE id = ?");
-            $roleStmt->bind_param("s", $currentClub['managerId']);
-            $roleStmt->execute();
-
-            $clubStmt = $conn->prepare("UPDATE clubs SET managerId = ? WHERE id = ?");
-            $clubStmt->bind_param("ss", $subId, $id);
-            $clubStmt->execute();
-
-            $newRoleStmt = $conn->prepare("UPDATE users SET role = 'club_manager' WHERE id = ?");
-            $newRoleStmt->bind_param("s", $subId);
-            $newRoleStmt->execute();
-
-            $conn->commit();
-            echo json_encode(["message" => "Manager updated successfully"]);
-
-        } catch (Exception $e) {
-            $conn->rollback();
-            http_response_code(500);
-            echo json_encode(["error" => $e->getMessage()]);
-        }
-    }
-
-    // PUT /clubs/{id}
-    elseif ($method === "POST" && $id) {
-        $fetchStmt = $conn->prepare("SELECT image FROM clubs WHERE id = ?");
-        $fetchStmt->bind_param("s", $id);
-        $fetchStmt->execute();
-        $currentClub = $fetchStmt->get_result()->fetch_assoc();
-        $fetchStmt->close();
-
-        if (!$currentClub) {
-            http_response_code(404);
-            echo json_encode(["error" => "Club not found"]);
-            return;
-        }
-
-        $imagePath = $_POST['image'] ?? $currentClub['image'];
-
-        $conn->begin_transaction();
-        try {
-            $name = $_POST['name'] ?? '';
-            $description = $_POST['description'] ?? '';
-            $category = $_POST['category'] ?? 'General';
-
-            $stmt = $conn->prepare(
-                "UPDATE clubs SET name=?, description=?, category=?, image=? WHERE id=?"
-            );
-            
-            $stmt->bind_param("sssss", $name, $description, $category, $imagePath, $id);
-
-            if ($stmt->execute()) {
-                $conn->commit();
-                echo json_encode([
-                    "message" => "Club updated successfully",
-                    "clubId" => $id,
-                    "imagePath" => $imagePath
-                ]);
-            } else {
-                throw new Exception("Execute failed");
-            }
-            $stmt->close();
-        } catch (Exception $e) {
-            $conn->rollback();
-            http_response_code(500);
-            echo json_encode(["error" => "Failed to update club", "details" => $e->getMessage()]);
-        }
-    }
-
-    // DELETE /clubs/{id}
-    elseif ($method === "DELETE" && $id) {
-        $getManager = $conn->prepare("SELECT managerId FROM clubs WHERE id = ?");
-        $getManager->bind_param("s", $id);
-        $getManager->execute();
-        $result = $getManager->get_result();
-        $club = $result->fetch_assoc();
-
-        if ($club) {
-            $managerId = $club['managerId'];
-
-            $conn->begin_transaction();
-
-            try {
-                $stmt = $conn->prepare("DELETE FROM clubs WHERE id = ?");
-                $stmt->bind_param("s", $id);
-                $stmt->execute();
-
-                $checkOtherClubs = $conn->prepare("SELECT id FROM clubs WHERE managerId = ?");
-                $checkOtherClubs->bind_param("s", $managerId);
-                $checkOtherClubs->execute();
-                
-                if ($checkOtherClubs->get_result()->num_rows === 0) {
-                    $updateRole = $conn->prepare("UPDATE users SET role = 'student' WHERE id = ?");
-                    $updateRole->bind_param("s", $managerId);
-                    $updateRole->execute();
-                }
-
-                $conn->commit();
-                echo json_encode(["message" => "Club deleted and roles updated"]);
-            } catch (Exception $e) {
-                $conn->rollback();
-                http_response_code(500);
-                echo json_encode(["error" => "Deletion failed"]);
-            }
-        } else {
-            http_response_code(404);
-            echo json_encode(["error" => "Club not found"]);
-        }
-    }
+function sendClubResponse($data, $code = 200) {
+    http_response_code($code);
+    echo json_encode($data);
+    exit;
 }

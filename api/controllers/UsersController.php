@@ -2,168 +2,121 @@
 
 function handleUsers($method, $uri, $conn) {
     $id = $uri[1] ?? null;
+    $input = json_decode(file_get_contents("php://input"), true) ?? $_POST;
 
-    $data = json_decode(file_get_contents("php://input"), true);
+    switch ($method) {
+        case "GET":
+            return $id ? getUserById($conn, $id) : getAllUsers($conn);
 
-    if ($method === "POST" && $id === "login") {
+        case "POST":
+            if ($id === "login") return loginUser($conn, $input);
+            if ($id === "register") return registerUser($conn, $input);
+            break;
 
-        if (!isset($data['email'], $data['password'])) {
-            http_response_code(400);
-            echo json_encode(["error" => "Missing email or password"]);
-            return;
-        }
+        case "PUT":
+            if ($id === "update") return updateProfile($conn, $input);
+            if ($id === "avatar") return updateAvatar($conn, $input);
+            break;
 
-        $stmt = $conn->prepare(
-            "SELECT * 
-             FROM users 
-             WHERE email = ?"
-        );
-        $stmt->bind_param("s", $data['email']);
+        default:
+            sendUserResponse(["error" => "Invalid users route"], 404);
+    }
+}
+
+
+function loginUser($conn, $input) {
+    $email = $input['email'] ?? null;
+    $password = $input['password'] ?? null;
+
+    if (!$email || !$password) {
+        sendUserResponse(["error" => "Missing credentials"], 400);
+    }
+
+    $stmt = $conn->prepare("SELECT * FROM users WHERE email = ?");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+
+    if ($user && password_verify($password, $user['password'])) {
+        unset($user['password']);
+        sendUserResponse($user);
+    } else {
+        sendUserResponse(["error" => "Invalid credentials"], 401);
+    }
+}
+
+function registerUser($conn, $input) {
+    $name = $input['name'] ?? null;
+    $email = $input['email'] ?? null;
+    $password = $input['password'] ?? null;
+
+    if (!$name || !$email || !$password) {
+        sendUserResponse(["error" => "Missing fields"], 400);
+    }
+
+    $uid = bin2hex(random_bytes(8));
+    $hash = password_hash($password, PASSWORD_DEFAULT);
+
+    try {
+        $stmt = $conn->prepare("INSERT INTO users (id, name, email, password, role) VALUES (?, ?, ?, ?, 'student')");
+        $stmt->bind_param("ssss", $uid, $name, $email, $hash);
         $stmt->execute();
-        $result = $stmt->get_result();
-        $user = $result->fetch_assoc();
 
-        if ($user && password_verify($data['password'], $user['password'])) {
-            unset($user['password']);
-            echo json_encode($user);
-        } else {
-            http_response_code(401);
-            echo json_encode(["error" => "Invalid credentials"]);
-        }
-        return;
+        sendUserResponse(["id" => $uid, "name" => $name, "email" => $email, "role" => "student"], 201);
+    } catch (Exception $e) {
+        sendUserResponse(["error" => "Email already exists or database error"], 409);
     }
+}
 
-    if ($method === "POST" && $id === "register") {
-        try {
-            if (!isset($data['name'], $data['email'], $data['password'])) {
-                http_response_code(400);
-                echo json_encode(["error" => "Missing fields"]);
-                return;
-            }
+function updateProfile($conn, $input) {
+    $userId = $input['id'] ?? null;
+    if (!$userId) sendUserResponse(["error" => "User ID required"], 400);
 
-            $uid = bin2hex(random_bytes(8));
-            $hash = password_hash($data['password'], PASSWORD_DEFAULT);
+    $stmt = $conn->prepare("SELECT name, bio FROM users WHERE id = ?");
+    $stmt->bind_param("s", $userId);
+    $stmt->execute();
+    $current = $stmt->get_result()->fetch_assoc();
 
-            $conn->begin_transaction();
+    if (!$current) sendUserResponse(["error" => "User not found"], 404);
 
-            $stmt = $conn->prepare(
-                "INSERT INTO users (id, name, email, password, role) 
-                 VALUES (?, ?, ?, ?, 'student')"
-            );
-            
-            $stmt->bind_param(
-                "ssss",
-                $uid,
-                $data['name'],
-                $data['email'],
-                $hash
-            );
+    $name = $input['name'] ?? $current['name'];
+    $bio  = $input['bio'] ?? $current['bio'];
 
-            $stmt->execute();
-            $conn->commit();
+    $upd = $conn->prepare("UPDATE users SET name = ?, bio = ? WHERE id = ?");
+    $upd->bind_param("sss", $name, $bio, $userId);
+    
+    $upd->execute() ? sendUserResponse(["message" => "Updated"]) : sendUserResponse(["error" => "Update failed"], 500);
+}
 
-            echo json_encode([
-                "id" => $uid,
-                "name" => $data['name'],
-                "email" => $data['email'],
-                "role" => "student"
-            ]);
+function updateAvatar($conn, $input) {
+    $userId = $input['userId'] ?? null;
+    $avatar = $input['avatar'] ?? null;
 
-        } catch (Exception $e) {
-            if ($conn->connect_errno === 0) {
-                $conn->rollback();
-            }
+    if (!$userId || !$avatar) sendUserResponse(["error" => "Missing data"], 400);
 
-            http_response_code(409);
-            echo json_encode(["error" => "Email already exists"]);
-        }
-        return;
-    }
+    $stmt = $conn->prepare("UPDATE users SET avatar = ? WHERE id = ?");
+    $stmt->bind_param("ss", $avatar, $userId);
+    
+    $stmt->execute() ? sendUserResponse(["success" => true, "avatar" => $avatar]) : sendUserResponse(["error" => "Update failed"], 500);
+}
 
-    if ($method === "POST" && $id === "update") {
-        $userId = $data['id'] ?? null;
-        
-        $fetch = $conn->prepare("SELECT name, bio FROM users WHERE id = ?");
-        $fetch->bind_param("s", $userId);
-        $fetch->execute();
-        $current = $fetch->get_result()->fetch_assoc();
+function getUserById($conn, $id) {
+    $stmt = $conn->prepare("SELECT id, name, email, role, bio, avatar FROM users WHERE id = ?");
+    $stmt->bind_param("s", $id);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+    
+    $user ? sendUserResponse($user) : sendUserResponse(["error" => "User not found"], 404);
+}
 
-        if (!$current) {
-            http_response_code(404);
-            echo json_encode(["error" => "User not found"]);
-            exit;
-        }
+function getAllUsers($conn) {
+    $res = $conn->query("SELECT id, name, email, role FROM users");
+    sendUserResponse($res->fetch_all(MYSQLI_ASSOC));
+}
 
-        $newName = $data['name'] ?? $current['name'];
-        $newBio  = $data['bio'] ?? $current['bio'];
 
-        try {
-            $stmt = $conn->prepare("UPDATE users SET bio = ?, name = ? WHERE id = ?");
-            $stmt->bind_param("sss", $newBio, $newName, $userId);
-
-            if ($stmt->execute()) {
-                echo json_encode(['success' => true, 'message' => 'Updated successfully']);
-            } else {
-                throw new Exception($stmt->error);
-            }
-            $stmt->close();
-        } catch (Exception $e) {
-            http_response_code(500);
-            echo json_encode(["error" => "Database error"]);
-        }
-        return;
-    }
-
-    if ($method === "POST" && $id === "avatar") {
-        $userId = $_POST['userId'] ?? null;
-        $avatarUrl = $_POST['avatar'] ?? null; 
-
-        if (!$userId || !$avatarUrl) {
-            http_response_code(400);
-            echo json_encode(['success' => false, 'message' => 'User ID or Avatar URL missing']);
-            return;
-        }
-
-        try {
-            $stmt = $conn->prepare("UPDATE users SET avatar = ? WHERE id = ?");
-            $stmt->bind_param("ss", $avatarUrl, $userId);
-            
-            if ($stmt->execute()) {
-                echo json_encode([
-                    'success' => true,
-                    'avatar' => $avatarUrl
-                ]);
-            } else {
-                throw new Exception("Database update failed");
-            }
-            $stmt->close();
-
-        } catch (Exception $e) {
-            http_response_code(500);
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-        }
-
-        return;
-    }
-
-    if ($method === "GET" && $id) {
-        $stmt = $conn->prepare(
-            "SELECT * 
-             FROM users 
-             WHERE id = ?"
-        );
-        $stmt->bind_param("s", $id);
-        $stmt->execute();
-        echo json_encode($stmt->get_result()->fetch_assoc());
-        return;
-    }
-
-    if ($method === "GET" && !$id) {
-        $res = $conn->query("SELECT * FROM users");
-        echo json_encode($res->fetch_all(MYSQLI_ASSOC));
-        return;
-    }
-
-    http_response_code(404);
-    echo json_encode(["error" => "Invalid users route"]);
+function sendUserResponse($data, $code = 200) {
+    http_response_code($code);
+    echo json_encode($data);
+    exit;
 }

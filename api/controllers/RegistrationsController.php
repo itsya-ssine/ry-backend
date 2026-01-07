@@ -1,184 +1,122 @@
 <?php
+
 function handleRegistrations($method, $uri, $conn) {
-    $id = $uri[1] ?? null;       // for /api/users/login
-    $subId = $uri[2] ?? null;    // for /api/registrations/student/{id}
+    $filter = $uri[1] ?? null;
+    $filterId = $uri[2] ?? null;
+    $input = json_decode(file_get_contents("php://input"), true) ?? $_POST;
 
-    $data = json_decode(file_get_contents("php://input"), true);
-    header("Content-Type: application/json");
+    switch ($method) {
+        case "GET":
+            if ($filter === 'club' && $filterId) return getRegistrationsByClub($conn, $filterId);
+            if ($filter === 'student' && $filterId) return getRegistrationsByStudent($conn, $filterId);
+            return getAllRegistrations($conn);
 
-    if ($method === "GET" && $id === 'club' && $subId) {
-        $sql = "SELECT r.joinedAt, r.status, r.clubId, u.id as userId, u.name, u.email, u.avatar
-                FROM registrations r 
-                JOIN users u ON r.studentId = u.id 
-                WHERE r.clubId = ?";
-            
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("s", $subId);
-        $stmt->execute();
-        $result = $stmt->get_result();
+        case "POST":
+            return createRegistration($conn, $input);
 
-        $registrations = [];
+        case "PUT":
+            return updateRegistrationStatus($conn, $input);
 
-        while ($row = $result->fetch_assoc()) {
-            $registrations[] = [
-                "id" => uniqid('reg_'),
-                "joinedAt" => $row['joinedAt'],
-                "status" => $row['status'],
-                "clubId" => $row['clubId'],
-                "student" => [
-                    "id" => $row['userId'],
-                    "name" => $row['name'],
-                    "email" => $row['email'],
-                    "avatar" => $row['avatar']
-                ]
-            ];
-        }
+        case "DELETE":
+            return removeRegistration($conn, $input);
 
-        echo json_encode($registrations);
-        return;
+        default:
+            sendRegResponse(["error" => "Method not allowed"], 405);
     }
-
-    if ($method === "GET" && $id === 'student' && $subId) {
-        $sql = "SELECT r.joinedAt, r.status, r.clubId, u.id as userId, u.name, u.email
-                FROM registrations r 
-                JOIN users u ON r.studentId = u.id 
-                WHERE r.studentId = ?";
-            
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("s", $subId);
-        $stmt->execute();
-        $result = $stmt->get_result();
-
-        $registrations = [];
-
-        while ($row = $result->fetch_assoc()) {
-            $registrations[] = [
-                "id" => uniqid('reg_'),
-                "joinedAt" => $row['joinedAt'],
-                "status" => $row['status'],
-                "clubId" => $row['clubId'],
-                "student" => [
-                    "id" => $row['userId'],
-                    "name" => $row['name'],
-                    "email" => $row['email']
-                ]
-            ];
-        }
-
-        echo json_encode($registrations);
-        return;
-    }
-
-    if ($method === "GET") {
-        $sql = "SELECT r.joinedAt, r.status, r.clubId, u.id as userId, u.name, u.email 
-                FROM registrations r 
-                JOIN users u ON r.studentId = u.id";
-            
-        $stmt = $conn->prepare($sql);
-        $stmt->execute();
-        $result = $stmt->get_result();
-
-        $registrations = [];
-
-        while ($row = $result->fetch_assoc()) {
-            $registrations[] = [
-                "id" => uniqid('reg_'),
-                "joinedAt" => $row['joinedAt'],
-                "status" => $row['status'],
-                "clubId" => $row['clubId'],
-                "student" => [
-                    "id" => $row['userId'],
-                    "name" => $row['name'],
-                    "email" => $row['email']
-                ]
-            ];
-        }
-
-        echo json_encode($registrations);
-        return;
-    }
-
-    if ($method === "POST") {
-        $joinedAt = date("Y-m-d");
-        $status = $data['status'] ?? 'pending';
-        $sId = $data['studentId'];
-        $cId = $data['clubId'];
-        
-        $stmt = $conn->prepare(
-            "INSERT INTO registrations (studentId, clubId, status, joinedAt) VALUES (?,?,?,?)"
-        );
-        $stmt->bind_param("ssss", $sId, $cId, $status, $joinedAt);
-        
-        if ($stmt->execute()) {
-            echo json_encode([
-                "id" => $sId . "-" . $cId, 
-                "studentId" => $sId,
-                "clubId" => $cId,
-                "status" => $status,
-                "joinedAt" => $joinedAt
-            ]);
-        }
-        return;
-    }
-
-    // Inside your registrations controller/file
-    elseif ($method === "PUT") {
-
-        if (!isset($data['studentId'], $data['clubId'], $data['status'])) {
-            http_response_code(400);
-            echo json_encode(["error" => "Missing data"]);
-            return;
-        }
-
-        $sId = $data['studentId'];
-        $cId = $data['clubId'];
-        $newStatus = $data['status'];
-
-        $stmt = $conn->prepare(
-            "UPDATE registrations SET status = ? WHERE studentId = ? AND clubId = ?"
-        );
-        
-        $stmt->bind_param("sss", $newStatus, $sId, $cId);
-
-        if ($stmt->execute()) {
-            echo json_encode([
-                "message" => "Registration updated to " . $newStatus,
-                "newStatus" => $newStatus
-            ]);
-        } else {
-            http_response_code(500);
-            echo json_encode(["error" => "Database update failed"]);
-        }
-        return;
-    }
-
-    // Inside your registrations handler
-    elseif ($method === "DELETE") {
-        // Read the JSON body
-        $data = json_decode(file_get_contents("php://input"), true);
-        
-        $sId = $data['studentId'] ?? null;
-        $cId = $data['clubId'] ?? null;
-
-        if (!$sId || !$cId) {
-            http_response_code(400);
-            echo json_encode(["error" => "Missing studentId or clubId"]);
-            return;
-        }
-
-        $stmt = $conn->prepare("DELETE FROM registrations WHERE studentId = ? AND clubId = ?");
-        $stmt->bind_param("ss", $sId, $cId);
-
-        if ($stmt->execute()) {
-            echo json_encode(["message" => "Member removed successfully"]);
-        } else {
-            http_response_code(500);
-            echo json_encode(["error" => "Database deletion failed"]);
-        }
-        return;
-    }
-
-    http_response_code(404);
-    echo json_encode(["error"=>"Invalid registrations route"]);
 }
-?>
+
+
+function getAllRegistrations($conn) {
+    $sql = "SELECT r.*, u.name, u.email, u.avatar FROM registrations r 
+            JOIN users u ON r.studentId = u.id";
+    $res = $conn->query($sql);
+    sendRegResponse(formatRegistrationRows($res));
+}
+
+function getRegistrationsByClub($conn, $clubId) {
+    $sql = "SELECT r.*, u.name, u.email, u.avatar FROM registrations r 
+            JOIN users u ON r.studentId = u.id WHERE r.clubId = ?";
+    return executeFilteredQuery($conn, $sql, $clubId);
+}
+
+function getRegistrationsByStudent($conn, $studentId) {
+    $sql = "SELECT r.*, u.name, u.email, u.avatar FROM registrations r 
+            JOIN users u ON r.studentId = u.id WHERE r.studentId = ?";
+    return executeFilteredQuery($conn, $sql, $studentId);
+}
+
+function createRegistration($conn, $input) {
+    $sId = $input['studentId'] ?? null;
+    $cId = $input['clubId'] ?? null;
+    $status = $input['status'] ?? 'pending';
+    $date = date("Y-m-d");
+
+    if (!$sId || !$cId) sendRegResponse(["error" => "Missing IDs"], 400);
+
+    $stmt = $conn->prepare("INSERT INTO registrations (studentId, clubId, status, joinedAt) VALUES (?, ?, ?, ?)");
+    $stmt->bind_param("ssss", $sId, $cId, $status, $date);
+
+    if ($stmt->execute()) {
+        sendRegResponse(["success" => true, "joinedAt" => $date], 201);
+    } else {
+        sendRegResponse(["error" => "Registration failed"], 500);
+    }
+}
+
+function updateRegistrationStatus($conn, $input) {
+    $sId = $input['studentId'] ?? null;
+    $cId = $input['clubId'] ?? null;
+    $status = $input['status'] ?? null;
+
+    if (!$sId || !$cId || !$status) sendRegResponse(["error" => "Missing data"], 400);
+
+    $stmt = $conn->prepare("UPDATE registrations SET status = ? WHERE studentId = ? AND clubId = ?");
+    $stmt->bind_param("sss", $status, $sId, $cId);
+
+    $stmt->execute() ? sendRegResponse(["message" => "Status updated to $status"]) : sendRegResponse(["error" => "Update failed"], 500);
+}
+
+function removeRegistration($conn, $input) {
+    $sId = $input['studentId'] ?? null;
+    $cId = $input['clubId'] ?? null;
+
+    if (!$sId || !$cId) sendRegResponse(["error" => "Missing IDs"], 400);
+
+    $stmt = $conn->prepare("DELETE FROM registrations WHERE studentId = ? AND clubId = ?");
+    $stmt->bind_param("ss", $sId, $cId);
+
+    $stmt->execute() ? sendRegResponse(["message" => "Removed"]) : sendRegResponse(["error" => "Delete failed"], 500);
+}
+
+
+function executeFilteredQuery($conn, $sql, $id) {
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("s", $id);
+    $stmt->execute();
+    sendRegResponse(formatRegistrationRows($stmt->get_result()));
+}
+
+function formatRegistrationRows($result) {
+    $data = [];
+    while ($row = $result->fetch_assoc()) {
+        $data[] = [
+            "id" => "reg_" . bin2hex(random_bytes(4)), // Better than uniqid
+            "joinedAt" => $row['joinedAt'],
+            "status" => $row['status'],
+            "clubId" => $row['clubId'],
+            "student" => [
+                "id" => $row['studentId'],
+                "name" => $row['name'],
+                "email" => $row['email'],
+                "avatar" => $row['avatar'] ?? null
+            ]
+        ];
+    }
+    return $data;
+}
+
+function sendRegResponse($data, $code = 200) {
+    http_response_code($code);
+    echo json_encode($data);
+    exit;
+}

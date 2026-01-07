@@ -1,154 +1,115 @@
 <?php
+
 function handleNotifications($method, $uri, $conn) {
     $receiverId = $uri[1] ?? null;
+    $input = json_decode(file_get_contents("php://input"), true) ?? $_POST;
 
-    if ($method === "GET" && $receiverId === "sender") {
-        $senderId = $uri[2];
+    switch ($method) {
+        case "GET":
+            if ($receiverId === "sender" && isset($uri[2])) return getSenderInfo($conn, $uri[2]);
+            return getNotifications($conn, $receiverId);
 
-        $stmt = $conn->prepare("SELECT role FROM users WHERE id = ?");
-        $stmt->bind_param("s", $senderId);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        $user = $res->fetch_assoc();
-        $stmt->close();
+        case "POST":
+            return createNotifications($conn, $input);
 
-        if ($user && $user['role'] === 'admin') {
-            http_response_code(200);
-            echo json_encode([
-                "name" => "ADMINISTRATION"
-            ]);
-            return;
-        }
+        case "PUT":
+            return updateNotification($conn, $receiverId, $uri[2] ?? null, $input);
 
-        $stmt = $conn->prepare("SELECT name FROM clubs WHERE managerId = ?");
-        $stmt->bind_param("s", $senderId);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        $club = $res->fetch_assoc();
-        $stmt->close();
+        case "DELETE":
+            return deleteNotifications($conn, $receiverId, $uri[2] ?? null);
 
-        if ($club) {
-            http_response_code(200);
-            echo json_encode([
-                "name" => $club['name']
-            ]);
-            return;
-        }
+        default:
+            sendNotifResponse(["error" => "Method not allowed"], 405);
+    }
+}
 
-        http_response_code(404);
-        echo json_encode([
-            "name" => "System"
-        ]);
-        return;
+
+function getSenderInfo($conn, $senderId) {
+    $stmt = $conn->prepare("SELECT role FROM users WHERE id = ?");
+    $stmt->bind_param("s", $senderId);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+
+    if ($user && $user['role'] === 'admin') {
+        sendNotifResponse(["name" => "ADMINISTRATION"]);
     }
 
-    if ($method === "GET") {
-        if ($receiverId) {
-            $stmt = $conn->prepare("SELECT * FROM notifications WHERE receiverId = ? ORDER BY date DESC");
-            $stmt->bind_param("s", $receiverId);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            $notifications = [];
-            while ($row = $result->fetch_assoc()) {
-                $notifications[] = $row;
-            }
-            
-            echo json_encode($notifications);
-            $stmt->close();
-        } else {
-            echo json_encode([]);
-        }
-    }
+    $stmt = $conn->prepare("SELECT name FROM clubs WHERE managerId = ?");
+    $stmt->bind_param("s", $senderId);
+    $stmt->execute();
+    $club = $stmt->get_result()->fetch_assoc();
 
-    elseif ($method === "POST") {
-        $data = json_decode(file_get_contents("php://input"), true);
-        
-        $type = $data['type'] ?? 'info';
-        $senderId = $data['senderId'] ?? null;
-        $receivers = $data['receiverId'] ?? null;
-        $message = $data['message'] ?? '';
+    $displayName = $club ? $club['name'] : "System";
+    sendNotifResponse(["name" => $displayName]);
+}
 
-        if (!$receivers || !$senderId || !$message) {
-            http_response_code(400);
-            echo json_encode(["error" => "Informations are required"]);
-            return;
-        }
+function getNotifications($conn, $receiverId) {
+    if (!$receiverId) sendNotifResponse([]);
 
-        $receiverList = is_array($receivers) ? $receivers : [$receivers];
-
-        $conn->begin_transaction();
-
-        try {
-            $stmt = $conn->prepare("INSERT INTO notifications (id, type, senderId, receiverId, message) VALUES (?, ?, ?, ?, ?)");
-
-            foreach ($receiverList as $rId) {
-                $newNotifId = uniqid("n_") . bin2hex(random_bytes(5));
-                $stmt->bind_param("sssss", $newNotifId, $type, $senderId, $rId, $message);
-                $stmt->execute();
-            }
-
-            $conn->commit();
-            
-            http_response_code(201);
-            echo json_encode([
-                "message" => "Broadcast successful",
-                "count" => count($receiverList)
-            ]);
-            
-            $stmt->close();
-        } catch (Exception $e) {
-            $conn->rollback();
-            http_response_code(500);
-            echo json_encode([
-                "error" => "Failed to process broadcast",
-                "details" => $e->getMessage()
-            ]);
-        }
-    }
-
-    // --- ADDED PUT BLOCK FOR UPDATING STATUS ---
-    elseif ($method === "PUT" && $receiverId) {
-        $notifId = $uri[2] ?? null;
-        
-        if (!$notifId) {
-            http_response_code(400);
-            echo json_encode(["error" => "Notification ID required"]);
-            return;
-        }
-
-        $data = json_decode(file_get_contents("php://input"), true);
-        $type = $data['type'] ?? 'info';
-
-        $stmt = $conn->prepare("UPDATE notifications SET type = ? WHERE id = ? AND receiverId = ?");
-        $stmt->bind_param("sss", $type, $notifId, $receiverId);
-
-        if ($stmt->execute()) {
-            echo json_encode(["message" => "Notification updated"]);
-        } else {
-            http_response_code(500);
-            echo json_encode(["error" => "Update failed"]);
-        }
-        $stmt->close();
-    }
+    $stmt = $conn->prepare("SELECT * FROM notifications WHERE receiverId = ? ORDER BY date DESC");
+    $stmt->bind_param("s", $receiverId);
+    $stmt->execute();
     
-    elseif ($method === "DELETE" && $receiverId) {
-        $notifId = $uri[2] ?? null;
+    sendNotifResponse($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
+}
 
-        if ($notifId) {
-            $stmt = $conn->prepare("DELETE FROM notifications WHERE id = ? AND receiverId = ?");
-            $stmt->bind_param("ss", $notifId, $receiverId);
-        } else {
-            $stmt = $conn->prepare("DELETE FROM notifications WHERE receiverId = ?");
-            $stmt->bind_param("s", $receiverId);
-        }
+function createNotifications($conn, $input) {
+    $senderId  = $input['senderId'] ?? null;
+    $receivers = $input['receiverId'] ?? null;
+    $message   = $input['message'] ?? '';
+    $type      = $input['type'] ?? 'info';
 
-        if ($stmt->execute()) {
-            echo json_encode(["message" => "Notifications cleared"]);
-        } else {
-            http_response_code(500);
-            echo json_encode(["error" => "Failed to delete"]);
-        }
-        $stmt->close();
+    if (!$senderId || !$receivers || !$message) {
+        sendNotifResponse(["error" => "Missing required notification fields"], 400);
     }
+
+    $receiverList = is_array($receivers) ? $receivers : [$receivers];
+    $conn->begin_transaction();
+
+    try {
+        $stmt = $conn->prepare("INSERT INTO notifications (id, type, senderId, receiverId, message) VALUES (?, ?, ?, ?, ?)");
+
+        foreach ($receiverList as $rId) {
+            $id = "n_" . bin2hex(random_bytes(8));
+            $stmt->bind_param("sssss", $id, $type, $senderId, $rId, $message);
+            $stmt->execute();
+        }
+
+        $conn->commit();
+        sendNotifResponse(["message" => "Broadcast successful", "count" => count($receiverList)], 201);
+    } catch (Exception $e) {
+        $conn->rollback();
+        sendNotifResponse(["error" => "Broadcast failed", "details" => $e->getMessage()], 500);
+    }
+}
+
+function updateNotification($conn, $receiverId, $notifId, $input) {
+    if (!$notifId || !$receiverId) sendNotifResponse(["error" => "IDs required"], 400);
+
+    $type = $input['type'] ?? 'info';
+    $stmt = $conn->prepare("UPDATE notifications SET type = ? WHERE id = ? AND receiverId = ?");
+    $stmt->bind_param("sss", $type, $notifId, $receiverId);
+    
+    $stmt->execute() ? sendNotifResponse(["message" => "Updated"]) : sendNotifResponse(["error" => "Failed"], 500);
+}
+
+function deleteNotifications($conn, $receiverId, $notifId = null) {
+    if (!$receiverId) sendNotifResponse(["error" => "Receiver ID required"], 400);
+
+    if ($notifId) {
+        $stmt = $conn->prepare("DELETE FROM notifications WHERE id = ? AND receiverId = ?");
+        $stmt->bind_param("ss", $notifId, $receiverId);
+    } else {
+        $stmt = $conn->prepare("DELETE FROM notifications WHERE receiverId = ?");
+        $stmt->bind_param("s", $receiverId);
+    }
+
+    $stmt->execute() ? sendNotifResponse(["message" => "Cleared"]) : sendNotifResponse(["error" => "Delete failed"], 500);
+}
+
+
+function sendNotifResponse($data, $code = 200) {
+    http_response_code($code);
+    echo json_encode($data);
+    exit;
 }

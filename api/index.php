@@ -1,67 +1,62 @@
 <?php
-// Enable error reporting for development
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+declare(strict_types=1);
 
-// Headers for JSON and CORS
-header("Content-Type: application/json");
+error_reporting(E_ALL);
+ini_set('display_errors', '1');
+
+header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-// Handle preflight request
-if ($_SERVER['REQUEST_METHOD'] === "OPTIONS") exit(0);
-
-// Include database and controllers
-require_once "config/db.php";
-require_once "controllers/UsersController.php";
-require_once "controllers/ClubsController.php";
-require_once "controllers/ActivitiesController.php";
-require_once "controllers/RegistrationsController.php";
-require_once "controllers/NotificationsController.php";
-require_once "controllers/ArchiveController.php";
-require_once "controllers/BadgesController.php";
-
-$method = $_SERVER['REQUEST_METHOD'];
-$uri = explode("/", trim($_SERVER['REQUEST_URI'], "/"));
-$uri = array_values(array_filter($uri));
-
-$apiIndex = array_search('api', $uri);
-
-if ($apiIndex === false) {
-    http_response_code(404);
-    echo json_encode(["error" => "API endpoint not found"]);
+if ($_SERVER['REQUEST_METHOD'] === "OPTIONS") {
+    http_response_code(204);
     exit;
 }
 
-$uri = array_slice($uri, $apiIndex + 1);
-$resource = $uri[0] ?? null;
+require_once "config/db.php";
 
-switch ($resource) {
-    case "users":
-        handleUsers($method, $uri, $conn);
-        break;
-    case "clubs":
-        handleClubs($method, $uri, $conn);
-        break;
-    case "activities":
-        handleActivities($method, $uri, $conn);
-        break;
-    case "registrations":
-        handleRegistrations($method, $uri, $conn);
-        break;
-    case "notifications":
-        handleNotifications($method, $uri, $conn);
-        break;
-    case "archive":
-        handleArchive($method, $uri, $conn);
-        break;
-    case "badges":
-        handleBadges($method, $uri, $conn);
-        break;
-    default:
-        http_response_code(404);
-        echo json_encode(["error" => "Resource not found"]);
+$controllers = [
+    'Users', 'Clubs', 'Activities', 'Registrations', 
+    'Notifications', 'Archive', 'Badges'
+];
+
+foreach ($controllers as $ctrl) {
+    require_once "controllers/{$ctrl}Controller.php";
 }
 
-?>
+$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$segments = array_values(array_filter(explode('/', trim($path, '/'))));
+
+$apiIndex = array_search('api', $segments);
+
+if ($apiIndex === false) {
+    sendResponse(["error" => "API endpoint not found"], 404);
+}
+
+$uriParams = array_slice($segments, $apiIndex + 1);
+$resource = $uriParams[0] ?? null;
+$method = $_SERVER['REQUEST_METHOD'];
+
+$routes = [
+    "users"         => "handleUsers",
+    "clubs"         => "handleClubs",
+    "activities"    => "handleActivities",
+    "registrations" => "handleRegistrations",
+    "notifications" => "handleNotifications",
+    "archive"       => "handleArchive",
+    "badges"        => "handleBadges",
+];
+
+if (isset($routes[$resource])) {
+    $handler = $routes[$resource];
+    $handler($method, $uriParams, $conn);
+} else {
+    sendResponse(["error" => "Resource '$resource' not found"], 404);
+}
+
+function sendResponse(array $data, int $code = 200): void {
+    http_response_code($code);
+    echo json_encode($data);
+    exit;
+}

@@ -1,146 +1,109 @@
 <?php
+
 function handleActivities($method, $uri, $conn) {
-    $id = $uri[1] ?? null;       // for /api/users/login
-    $subId = $uri[2] ?? null;    // for /api/registrations/student/{id}
+    $id = $uri[1] ?? null;
+    
+    $input = json_decode(file_get_contents("php://input"), true) ?? $_POST;
 
-    $data = json_decode(file_get_contents("php://input"), true);
+    switch ($method) {
+        case "GET":
+            if ($id === "recent") return getRecentActivities($conn);
+            if ($id) return getActivityById($conn, $id);
+            return getAllActivities($conn);
 
-    // GET /activities
-    if ($method === "GET" && !$id) {
-        $res = $conn->query("SELECT * FROM activities");
-        echo json_encode($res->fetch_all(MYSQLI_ASSOC));
+        case "POST":
+            return $id ? updateActivity($conn, $id, $input) : createActivity($conn, $input);
+
+        case "DELETE":
+            return deleteActivity($conn, $id);
+
+        default:
+            sendResponse(["error" => "Method not allowed"], 405);
     }
+}
 
-   // GET /activities/recent
-    elseif ($method === "GET" && $id === "recent") {
-        $stmt = $conn->prepare("SELECT * FROM activities ORDER BY date LIMIT 8");
+
+function getAllActivities($conn) {
+    $res = $conn->query("SELECT * FROM activities");
+    sendResponse($res->fetch_all(MYSQLI_ASSOC));
+}
+
+function getRecentActivities($conn) {
+    $stmt = $conn->prepare("SELECT * FROM activities ORDER BY date DESC LIMIT 8");
+    $stmt->execute();
+    sendResponse($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
+}
+
+function getActivityById($conn, $id) {
+    $stmt = $conn->prepare("SELECT * FROM activities WHERE id = ?");
+    $stmt->bind_param("s", $id);
+    $stmt->execute();
+    $activity = $stmt->get_result()->fetch_assoc();
+    
+    $activity ? sendResponse($activity) : sendResponse(["error" => "Not found"], 404);
+}
+
+function createActivity($conn, $input) {
+    $aid = uniqid("a");
+    $data = prepareActivityData($input);
+
+    try {
+        $stmt = $conn->prepare(
+            "INSERT INTO activities (id, title, description, date, location, image) VALUES (?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->bind_param("ssssss", $aid, $data['title'], $data['desc'], $data['date'], $data['loc'], $data['img']);
         $stmt->execute();
-        $result = $stmt->get_result();
-        
-        $activities = [];
-        while ($row = $result->fetch_assoc()) {
-            $activities[] = $row;
-        }
-        
-        echo json_encode($activities);
-    }
 
-    // GET /activities/{id}
-    elseif ($method === "GET" && $id) {
-        $stmt = $conn->prepare("SELECT * FROM activities WHERE id=?");
-        $stmt->bind_param("s", $id);
+        sendResponse(["success" => true, "activityId" => $aid], 201);
+    } catch (Exception $e) {
+        sendResponse(["error" => "Creation failed", "details" => $e->getMessage()], 500);
+    }
+}
+
+function updateActivity($conn, $id, $input) {
+    $stmt = $conn->prepare("SELECT image FROM activities WHERE id = ?");
+    $stmt->bind_param("s", $id);
+    $stmt->execute();
+    $current = $stmt->get_result()->fetch_assoc();
+
+    if (!$current) return sendResponse(["error" => "Activity not found"], 404);
+
+    $data = prepareActivityData($input, $current['image']);
+
+    try {
+        $stmt = $conn->prepare(
+            "UPDATE activities SET title=?, description=?, location=?, date=?, image=? WHERE id=?"
+        );
+        $stmt->bind_param("ssssss", $data['title'], $data['desc'], $data['loc'], $data['date'], $data['img'], $id);
         $stmt->execute();
-        echo json_encode($stmt->get_result()->fetch_assoc());
+
+        sendResponse(["message" => "Activity updated", "id" => $id]);
+    } catch (Exception $e) {
+        sendResponse(["error" => "Update failed", "details" => $e->getMessage()], 500);
     }
+}
 
-    // POST /activities
-    elseif ($method === "POST" && !$id) {
-        $aid = uniqid("a");
-        
-        $imagePath = $_POST['image'] ?? 'https://res.cloudinary.com/dfnaghttm/image/upload/v1767385774/w7x1o1g2h8v4qjhamx5e.png'; 
+function deleteActivity($conn, $id) {
+    if (!$id) return sendResponse(["error" => "ID required"], 400);
+    
+    $stmt = $conn->prepare("DELETE FROM activities WHERE id = ?");
+    $stmt->bind_param("s", $id);
+    $stmt->execute();
+    sendResponse(["message" => "Activity deleted"]);
+}
 
-        try {
-            $title = $_POST['title'] ?? '';
-            $description = $_POST['description'] ?? '';
-            $date = $_POST['date'] ?? '';
-            $location = $_POST['location'] ?? 'ENSA KHOURIBGA';
+function prepareActivityData($input, $defaultImg = 'https://res.cloudinary.com/.../default.png') {
+    return [
+        'title' => $input['title'] ?? '',
+        'desc'  => $input['description'] ?? '',
+        'date'  => $input['date'] ?? '',
+        'loc'   => $input['location'] ?? 'ENSA KHOURIBGA',
+        'img'   => $input['image'] ?? $defaultImg
+    ];
+}
 
-            $stmt = $conn->prepare(
-                "INSERT INTO activities (id, title, description, date, location, image)
-                VALUES (?, ?, ?, ?, ?, ?)"
-            );
-            
-            $stmt->bind_param(
-                "ssssss",
-                $aid,
-                $title,
-                $description,
-                $date,
-                $location,
-                $imagePath
-            );
-            
-            $stmt->execute();
-            $stmt->close();
-
-            echo json_encode([
-                "success" => true,
-                "message" => "Activity created",
-                "activityId" => $aid,
-                "image" => $imagePath
-            ]);
-
-        } catch (Exception $e) {
-            http_response_code(500);
-            echo json_encode([
-                "success" => false,
-                "error" => "Failed to create activity",
-                "details" => $e->getMessage()
-            ]);
-        }
-    }
-
-    elseif ($method === "POST" && $id) {
-        $fetchStmt = $conn->prepare("SELECT image FROM activities WHERE id = ?");
-        $fetchStmt->bind_param("s", $id);
-        $fetchStmt->execute();
-        $currentActivity = $fetchStmt->get_result()->fetch_assoc();
-        $fetchStmt->close();
-
-        if (!$currentActivity) {
-            http_response_code(404);
-            echo json_encode(["error" => "Activity not found"]);
-            return;
-        }
-
-        $conn->begin_transaction();
-
-        try {
-            $title = $_POST['title'] ?? '';
-            $description = $_POST['description'] ?? '';
-            $location = $_POST['location'] ?? 'ENSA KHOURIBGA';
-            $date = $_POST['date'] ?? '';
-
-            $imagePath = $_POST['image'] ?? $currentActivity['image'];
-
-            $stmt = $conn->prepare(
-                "UPDATE activities SET title=?, description=?, location=?, date=?, image=? WHERE id=?"
-            );
-            
-            $stmt->bind_param(
-                "ssssss",
-                $title,
-                $description,
-                $location,
-                $date,
-                $imagePath,
-                $id
-            );
-
-            if ($stmt->execute()) {
-                $conn->commit();
-                echo json_encode([
-                    "message" => "Activity updated successfully",
-                    "id" => $id,
-                    "imagePath" => $imagePath
-                ]);
-            } else {
-                throw new Exception("Update failed execution");
-            }
-            $stmt->close();
-
-        } catch (Exception $e) {
-            $conn->rollback();
-            http_response_code(500);
-            echo json_encode(["error" => "Failed to update activity", "details" => $e->getMessage()]);
-        }
-    }
-
-    // DELETE /activities/{id}
-    elseif ($method === "DELETE" && $id) {
-        $stmt = $conn->prepare("DELETE FROM activities WHERE id=?");
-        $stmt->bind_param("s", $id);
-        $stmt->execute();
-        echo json_encode(["message" => "Activity deleted"]);
-    }
+function sendResponse($data, $code = 200) {
+    http_response_code($code);
+    echo json_encode($data);
+    exit;
 }
