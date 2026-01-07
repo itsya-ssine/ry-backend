@@ -15,10 +15,7 @@
       ]
     }
   ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/index.php"
-    }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.php" }
   ]
 }
