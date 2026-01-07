@@ -120,32 +120,43 @@ function changeClubManager($conn, $clubId, $newManagerId) {
 }
 
 function deleteClub($conn, $id) {
-    $conn->begin_transaction();
-    try {
-        $stmt = $conn->prepare("SELECT managerId FROM clubs WHERE id = ?");
-        $stmt->bind_param("s", $id);
-        $stmt->execute();
-        $managerId = $stmt->get_result()->fetch_assoc()['managerId'] ?? null;
+    $getManager = $conn->prepare("SELECT managerId FROM clubs WHERE id = ?");
+    $getManager->bind_param("s", $id);
+    $getManager->execute();
+    $result = $getManager->get_result();
+    $club = $result->fetch_assoc();
 
-        if (!$managerId) sendResponse(["error" => "Club not found"], 404);
+    if ($club) {
+        $managerId = $club['managerId'];
 
-        $del = $conn->prepare("DELETE FROM clubs WHERE id = ?");
-        $del->bind_param("s", $id);
-        $del->execute();
+        $conn->begin_transaction();
 
-        $check = $conn->prepare("SELECT id FROM clubs WHERE managerId = ?");
-        $check->bind_param("s", $managerId);
-        $check->execute();
-        
-        if ($check->get_result()->num_rows === 0) {
-            updateUserRole($conn, $managerId, 'student');
+        try {
+            $stmt = $conn->prepare("DELETE FROM clubs WHERE id = ?");
+            $stmt->bind_param("s", $id);
+            $stmt->execute();
+
+            if ($managerId) {
+                $checkOtherClubs = $conn->prepare("SELECT id FROM clubs WHERE managerId = ?");
+                $checkOtherClubs->bind_param("s", $managerId);
+                $checkOtherClubs->execute();
+                
+                if ($checkOtherClubs->get_result()->num_rows === 0) {
+                    $updateRole = $conn->prepare("UPDATE users SET role = 'student' WHERE id = ?");
+                    $updateRole->bind_param("s", $managerId);
+                    $updateRole->execute();
+                }
+            }
+
+            $conn->commit();
+            sendResponse(["message" => "Club deleted"]);
+
+        } catch (Exception $e) {
+            $conn->rollback();
+            sendResponse(["error" => "Deletion failed"], 500);
         }
-
-        $conn->commit();
-        sendResponse(["message" => "Club deleted"]);
-    } catch (Exception $e) {
-        $conn->rollback();
-        sendResponse(["error" => "Delete failed"], 500);
+    } else {
+        sendResponse(["error" => "Club not found"], 404);
     }
 }
 
