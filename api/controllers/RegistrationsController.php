@@ -106,6 +106,7 @@ function formatRegistrationRows($result) {
     $data = [];
     while ($row = $result->fetch_assoc()) {
         $data[] = [
+            "id" => $row['id'], // <--- ADD THIS LINE
             "joinedAt" => $row['joinedAt'],
             "status" => $row['status'],
             "clubId" => $row['clubId'],
