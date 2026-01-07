@@ -58,15 +58,22 @@ function createRegistration($conn, $input) {
     $status = $input['status'] ?? 'pending';
     $date = date("Y-m-d");
 
-    if (!$sId || !$cId) sendResponse(["error" => "Missing IDs"], 400);
+    if (!$sId || !$cId)
+        sendResponse(["error" => "Missing IDs"], 400);
 
-    $stmt = $conn->prepare("INSERT INTO registrations (studentId, clubId, status, joinedAt) VALUES (?, ?, ?, ?)");
-    $stmt->bind_param("ssss", $sId, $cId, $status, $date);
+    $registrationId = bin2hex(random_bytes(8)); 
+
+    $stmt = $conn->prepare("INSERT INTO registrations (id, studentId, clubId, status, joinedAt) VALUES (?, ?, ?, ?, ?)");
+    $stmt->bind_param("sssss", $registrationId, $sId, $cId, $status, $date);
 
     if ($stmt->execute()) {
-        sendResponse(["success" => true, "joinedAt" => $date], 201);
+        sendResponse([
+            "success" => true, 
+            "id" => $registrationId, 
+            "joinedAt" => $date
+        ], 201);
     } else {
-        sendResponse(["error" => "Registration failed"], 500);
+        sendResponse(["error" => "Registration failed", "details" => $conn->error], 500);
     }
 }
 
