@@ -61,7 +61,7 @@ function createActivity($conn, $input) {
 }
 
 function updateActivity($conn, $id, $input) {
-    $stmt = $conn->prepare("SELECT image FROM activities WHERE id = ?");
+    $stmt = $conn->prepare("SELECT title FROM activities WHERE id = ?");
     $stmt->bind_param("s", $id);
     $stmt->execute();
     $current = $stmt->get_result()->fetch_assoc();
@@ -70,13 +70,11 @@ function updateActivity($conn, $id, $input) {
         sendResponse(["error" => "Activity not found"], 404);
     }
 
-    $data = prepareActivityData($input, $current['image']);
-
     try {
         $stmt = $conn->prepare(
-            "UPDATE activities SET title=?, description=?, location=?, date=?, image=? WHERE id=?"
+            "UPDATE activities SET title=?, description=?, location=?, date=? WHERE id=?"
         );
-        $stmt->bind_param("ssssss", $data['title'], $data['desc'], $data['loc'], $data['date'], $data['img'], $id);
+        $stmt->bind_param("sssss", $input['title'], $input['description'], $input['location'], $input['date'], $id);
         $stmt->execute();
 
         sendResponse(["message" => "Activity updated successfully", "id" => $id]);
@@ -87,7 +85,7 @@ function updateActivity($conn, $id, $input) {
 
 function deleteActivity($conn, $id) {
     if (!$id) {
-        sendResponse(["error" => "ID is required for deletion"], 400);
+        sendResponse(["error" => "ID required"], 400);
     }
     
     $stmt = $conn->prepare("DELETE FROM activities WHERE id = ?");
@@ -95,15 +93,4 @@ function deleteActivity($conn, $id) {
     $stmt->execute();
     
     sendResponse(["message" => "Activity deleted successfully"]);
-}
-
-
-function prepareActivityData($input, $defaultImg = 'https://res.cloudinary.com/.../default.png') {
-    return [
-        'title' => $input['title'] ?? '',
-        'desc'  => $input['description'] ?? '',
-        'date'  => $input['date'] ?? '',
-        'loc'   => $input['location'] ?? 'ENSA KHOURIBGA',
-        'img'   => $input['image'] ?? $defaultImg
-    ];
 }

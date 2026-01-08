@@ -2,10 +2,6 @@
 declare(strict_types=1);
 
 require_once __DIR__ . "/helpers/ResponseHelper.php";
-
-error_reporting(E_ALL);
-ini_set('display_errors', '1');
-
 require_once "config/db.php";
 
 $controllers = [
@@ -23,7 +19,7 @@ $segments = array_values(array_filter(explode('/', trim($path, '/'))));
 $apiIndex = array_search('api', $segments);
 
 if ($apiIndex === false) {
-    sendResponse(["error" => "API endpoint not found"], 404);
+    sendResponse(["error" => "API not found"], 404);
 }
 
 $uriParams = array_slice($segments, $apiIndex + 1);
