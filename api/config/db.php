@@ -1,8 +1,8 @@
 <?php
-$host = "localhost";
-$db   = "club_management";
-$user = "root";
-$pass = "Naoki1337@012";
+$host = "";
+$db   = "";
+$user = "";
+$pass = "";
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
