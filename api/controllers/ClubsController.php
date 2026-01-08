@@ -78,17 +78,15 @@ function createClub($conn, $input) {
 }
 
 function updateClub($conn, $id, $input) {
-    $stmt = $conn->prepare("SELECT image FROM clubs WHERE id = ?");
+    $stmt = $conn->prepare("SELECT name FROM clubs WHERE id = ?");
     $stmt->bind_param("s", $id);
     $stmt->execute();
     $current = $stmt->get_result()->fetch_assoc();
 
     if (!$current) sendResponse(["error" => "Club not found"], 404);
 
-    $img = $input['image'] ?? $current['image'];
-
-    $stmt = $conn->prepare("UPDATE clubs SET name=?, description=?, category=?, image=? WHERE id=?");
-    $stmt->bind_param("sssss", $input['name'], $input['description'], $input['category'], $img, $id);
+    $stmt = $conn->prepare("UPDATE clubs SET name=?, description=?, category=? WHERE id=?");
+    $stmt->bind_param("ssss", $input['name'], $input['description'], $input['category'],  $id);
     
     $stmt->execute() ? sendResponse(["message" => "Updated"]) : sendResponse(["error" => "Update failed"], 500);
 }
@@ -142,9 +140,7 @@ function deleteClub($conn, $id) {
                 $checkOtherClubs->execute();
                 
                 if ($checkOtherClubs->get_result()->num_rows === 0) {
-                    $updateRole = $conn->prepare("UPDATE users SET role = 'student' WHERE id = ?");
-                    $updateRole->bind_param("s", $managerId);
-                    $updateRole->execute();
+                    updateUserRole($conn, $managerId, 'student');
                 }
             }
 

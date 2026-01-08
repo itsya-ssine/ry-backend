@@ -17,10 +17,6 @@ function handleNotifications($method, $uri, $conn) {
             createNotifications($conn, $input);
             break;
 
-        case "PUT":
-            updateNotification($conn, $receiverId, $uri[2] ?? null, $input);
-            break;
-
         case "DELETE":
             deleteNotifications($conn, $receiverId, $uri[2] ?? null);
             break;
@@ -86,16 +82,6 @@ function createNotifications($conn, $input) {
         $conn->rollback();
         sendResponse(["error" => "Broadcast failed"], 500);
     }
-}
-
-function updateNotification($conn, $receiverId, $notifId, $input) {
-    if (!$notifId || !$receiverId) sendResponse(["error" => "IDs required"], 400);
-
-    $type = $input['type'] ?? 'info';
-    $stmt = $conn->prepare("UPDATE notifications SET type = ? WHERE id = ? AND receiverId = ?");
-    $stmt->bind_param("sss", $type, $notifId, $receiverId);
-    
-    $stmt->execute() ? sendResponse(["message" => "Updated"]) : sendResponse(["error" => "Update failed"], 500);
 }
 
 function deleteNotifications($conn, $receiverId, $notifId = null) {

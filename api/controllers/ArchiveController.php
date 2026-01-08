@@ -8,7 +8,7 @@ function handleArchive($method, $uri, $conn) {
             if ($resourceType === "activities") {
                 getArchivedActivities($conn);
             } else {
-                sendResponse(["error" => "Archive category not found"], 404);
+                sendResponse(["error" => "Archive not found"], 404);
             }
             break;
 
