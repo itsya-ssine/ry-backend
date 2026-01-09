@@ -12,7 +12,7 @@ function handleActivities($method, $uri, $conn) {
             break;
 
         case "POST":
-            $id ? updateActivity($conn, $id, $input) : createActivity($conn, $input);
+            $id ? updateActivity($conn, $id) : createActivity($conn);
             break;
 
         case "DELETE":
@@ -42,16 +42,21 @@ function getActivityById($conn, $id) {
     $activity ? sendResponse($activity) : sendResponse(["error" => "Activity not found"], 404);
 }
 
-function createActivity($conn, $input) {
+function createActivity($conn) {
+    $title       = $_POST['title'] ?? 'Untitled';
+    $description = $_POST['description'] ?? '';
+    $date        = $_POST['date'] ?? date('Y-m-d');
+    $location    = $_POST['location'] ?? 'ENSA KHOURIBGA';
+    $image       = $_POST['image'] ?? "https://res.cloudinary.com/dfnaghttm/image/upload/v1767385774/w7x1o1g2h8v4qjhamx5e.png";
+    
     $aid = uniqid("a");
-    $data = prepareActivityData($input);
 
     try {
         $stmt = $conn->prepare(
             "INSERT INTO activities (id, title, description, date, location, image) 
              VALUES (?, ?, ?, ?, ?, ?)"
         );
-        $stmt->bind_param("ssssss", $aid, $data['title'], $data['desc'], $data['date'], $data['loc'], $data['img']);
+        $stmt->bind_param("ssssss", $aid, $title, $description, $date, $location, $image);
         $stmt->execute();
 
         sendResponse(["success" => true, "activityId" => $aid], 201);
@@ -60,21 +65,23 @@ function createActivity($conn, $input) {
     }
 }
 
-function updateActivity($conn, $id, $input) {
-    $stmt = $conn->prepare("SELECT title FROM activities WHERE id = ?");
-    $stmt->bind_param("s", $id);
-    $stmt->execute();
-    $current = $stmt->get_result()->fetch_assoc();
+function updateActivity($conn, $id) {
+    $title       = $_POST['title'] ?? null;
+    $description = $_POST['description'] ?? null;
+    $location    = $_POST['location'] ?? null;
+    $date        = $_POST['date'] ?? null;
 
-    if (!$current) {
-        sendResponse(["error" => "Activity not found"], 404);
+    if (!$id) {
+        sendResponse(["error" => "ID required"], 400);
+        return;
     }
 
     try {
         $stmt = $conn->prepare(
             "UPDATE activities SET title=?, description=?, location=?, date=? WHERE id=?"
         );
-        $stmt->bind_param("sssss", $input['title'], $input['description'], $input['location'], $input['date'], $id);
+        
+        $stmt->bind_param("sssss", $title, $description, $location, $date, $id);
         $stmt->execute();
 
         sendResponse(["message" => "Activity updated successfully", "id" => $id]);
